@@ -33,8 +33,7 @@ Isaac UI (Web Interface)
 Isaac Core (Command Router)
         ↓
     ┌───────────────────────────────────────────────┐
-    │  Email Fetcher      (Outlook via AppleScript) │
-    │  Email Fetcher      (Gmail API)               │
+    │  Email Fetcher      (Gmail API via Python)    │
     │  Ollama Scorer      (local LLM)               │
     │  Calendar Manager   (Google Calendar API)     │
     │  WhatsApp Sender    (whatsapp-web.js)         │
@@ -51,8 +50,8 @@ Output / Results shown in UI
 | Component | Tool | Cost |
 |---|---|---|
 | Local LLM | Ollama + qwen2.5:3b | Free |
-| UW Email access | AppleScript → Outlook app | Free |
-| Personal email access | Gmail API (OAuth) | Free |
+| Email access | Gmail API (OAuth) via Python | Free |
+| UW email consolidation | Auto-forward from @wisc.edu to Gmail | Free |
 | Calendar access | Google Calendar API (OAuth) | Free |
 | WhatsApp | whatsapp-web.js | Free |
 | Script execution | Python subprocess | Free |
@@ -105,26 +104,36 @@ Any device, anywhere
 
 ## Email Strategy
 
-Isaac monitors two email accounts and consolidates flagged results into one review view.
+Isaac monitors one Gmail inbox that consolidates all email sources.
 
-| Account | Access Method | Why |
-|---|---|---|
-| UW Madison (@wisc.edu) | AppleScript → Outlook app | No API registration needed, works with campus Microsoft 365 |
-| Personal Gmail | Gmail API via OAuth | Official, stable, free |
+| Source | How it arrives |
+|---|---|
+| UW Madison (@wisc.edu) | Auto-forwarded to Gmail via UW Outlook forwarding settings |
+| Personal email | Already in Gmail natively |
 
-Both accounts feed into the same Ollama scorer. Flagged emails from both are surfaced together in the Isaac UI. Important emails are starred in their respective apps so the review is also visible natively.
+Isaac reads Gmail only via the Gmail API (Python). No Outlook involvement at all.
 
-**Why not n8n:** n8n was considered as a visual workflow builder but custom scripts were chosen instead. Reasons: no extra service to run and maintain, simpler stack, easier to debug, everything stays in plain files that are easy to version control.
+**Why not Outlook/AppleScript:** Microsoft Outlook 16.80+ (new Outlook for Mac) broke AppleScript inbox access. `messages of inbox` returns 0 regardless of inbox contents. Confirmed broken on version 16.107.3. AppleScript is removed from this project permanently.
+
+**Why not Microsoft Graph API:** UW Madison disables app passwords and restricts third-party OAuth for student accounts. Forwarding to Gmail bypasses this entirely with a one-time settings change.
+
+**Why not n8n:** Custom scripts were chosen over n8n for simplicity — no extra service to run, easier to debug, everything lives in plain version-controlled files.
 
 ---
 
 ## Modules
 
-### ✅ Module 1 — Email Fetcher (Outlook)
+### 🔄 Module 1 — Email Fetcher (Gmail)
 **Repo:** `isaac-email-fetcher`
-**Status:** Complete
+**Status:** In Progress
 
-Fetches all emails from Microsoft Outlook over the last 24 hours and saves them as a clean markdown file. Runs on a cron schedule. Foundation for the Ollama email scorer.
+Fetches all emails from Gmail over the last 24 hours using the Gmail API and saves them as a clean markdown file. Covers all email sources — UW Madison emails auto-forward to Gmail, so one script handles everything.
+
+**Access method:** Gmail API via OAuth (Python). One-time browser login generates `token.json` which is reused silently on all future runs.
+
+**Dependencies:** `google-auth-oauthlib`, `google-auth-httplib2`, `google-api-python-client`
+
+**Credentials:** `credentials.json` (downloaded from Google Cloud Console, never committed to GitHub)
 
 **Files:**
 ```
@@ -133,41 +142,35 @@ isaac-email-fetcher/
 │   ├── ROADMAP.md
 │   └── INSTRUCTIONS.md
 ├── scripts/
-│   ├── fetch_emails.applescript
+│   ├── fetch_emails.py        ← Gmail API fetcher
 │   ├── run.sh
 │   └── setup.sh
-├── output/
-├── logs/
+├── output/                    ← gitignored
+├── logs/                      ← gitignored
+├── credentials.json           ← gitignored
+├── token.json                 ← gitignored, auto-generated on first run
 ├── README.md
 └── .gitignore
 ```
 
----
-
-### 🔜 Module 2 — Email Fetcher (Gmail)
-**Repo:** `isaac-email-fetcher-gmail`
-**Status:** Planned
-
-Fetches all emails from personal Gmail over the last 24 hours using the Gmail API. Saves output in the same markdown format as the Outlook fetcher so both feed into the scorer identically.
-
-**Auth:** Google OAuth (one-time setup, free)
-
 **Flow:**
 ```
-Gmail API → last 24hrs of emails
+cron triggers run.sh
         ↓
-Formatted as emails_gmail_YYYY-MM-DD.md
+fetch_emails.py authenticates via token.json
         ↓
-Passed to Ollama Scorer (same as Outlook output)
+Gmail API returns last 24hrs of messages
+        ↓
+Saved as emails_YYYY-MM-DD_HH-MM.md in output/
 ```
 
 ---
 
-### 🔜 Module 3 — Ollama Email Scorer
+### 🔜 Module 2 — Ollama Email Scorer
 **Repo:** `isaac-email-scorer`
 **Status:** Planned
 
-Takes the markdown output from both email fetchers and runs it through a local Ollama model. Scores each email by importance based on predefined criteria. Flags important emails by starring them in their source app (Outlook or Gmail).
+Takes the markdown output from the email fetcher and runs it through a local Ollama model. Scores each email by importance based on predefined criteria. Flags important emails by starring them in Gmail.
 
 **Model:** `qwen2.5:3b` — chosen for speed, small size, and strong instruction-following. No reasoning needed since criteria are fully predefined.
 
@@ -178,24 +181,23 @@ Takes the markdown output from both email fetchers and runs it through a local O
 - Emails related to internships or jobs
 
 **Flagging behavior:**
-- Outlook emails → starred in Outlook
-- Gmail emails → starred + added to "Isaac's Picks" label in Gmail
+- Important emails → starred + added to "Isaac's Picks" label in Gmail
 - All flagged emails → surfaced in Isaac UI review panel
 
 **Flow:**
 ```
-emails_YYYY-MM-DD.md (Outlook)  +  emails_gmail_YYYY-MM-DD.md
-                    ↓
-            Ollama (qwen2.5:3b)
-    "Does this email matter based on [criteria]?"
-                    ↓
-        ├── Yes → Star in source app + add to flagged list
-        └── No  → Skip
+emails_YYYY-MM-DD.md
+        ↓
+Ollama (qwen2.5:3b)
+"Does this email matter based on [criteria]?"
+        ↓
+├── Yes → Star in Gmail + add to flagged list
+└── No  → Skip
 ```
 
 ---
 
-### 🔜 Module 4 — Morning Briefing
+### 🔜 Module 3 — Morning Briefing
 **Repo:** `isaac-morning-briefing`
 **Status:** Planned
 
@@ -210,7 +212,7 @@ Runs every morning at a set time. Combines flagged emails from both accounts wit
 
 ---
 
-### 🔜 Module 5 — Calendar Manager
+### 🔜 Module 4 — Calendar Manager
 **Repo:** `isaac-calendar`
 **Status:** Planned
 
@@ -226,7 +228,7 @@ Connects to Google Calendar via the Google Calendar API. Allows Isaac to view up
 
 ---
 
-### 🔜 Module 6 — WhatsApp Sender
+### 🔜 Module 5 — WhatsApp Sender
 **Repo:** `isaac-whatsapp`
 **Status:** Planned
 
@@ -241,7 +243,7 @@ Sends WhatsApp messages to contacts or groups via whatsapp-web.js. Uses a QR cod
 
 ---
 
-### 🔜 Module 7 — Script Runner
+### 🔜 Module 6 — Script Runner
 **Repo:** `isaac-script-runner`
 **Status:** Planned
 
@@ -254,7 +256,7 @@ Runs predefined scripts on the Mac on command. Scripts are pre-approved and stor
 
 ---
 
-### 🔜 Module 8 — Isaac Core + UI
+### 🔜 Module 7 — Isaac Core + UI
 **Repo:** `isaac-core`
 **Status:** Planned — built last, after all modules are stable
 
@@ -265,7 +267,7 @@ The brain that connects everything. A simple Flask web server that hosts the UI 
 - Output display
 - Module status indicators
 - Morning briefing view
-- Flagged emails review panel (Outlook + Gmail combined)
+- Flagged emails review panel (Gmail, Isaac's Picks label)
 
 ---
 
@@ -273,14 +275,13 @@ The brain that connects everything. A simple Flask web server that hosts the UI 
 
 | Phase | Module | Why |
 |---|---|---|
-| 1 | ✅ Email Fetcher (Outlook) | Foundation, no external dependencies |
-| 2 | 🔜 Email Fetcher (Gmail) | Same format, pairs with Outlook fetcher |
-| 3 | 🔜 Ollama Email Scorer | Builds directly on both fetcher outputs |
-| 4 | 🔜 Morning Briefing | Core daily use case, needs scorer + calendar |
-| 5 | 🔜 Calendar Manager | Self-contained, needed for morning briefing |
-| 6 | 🔜 WhatsApp Sender | Most complex auth, saved for later |
-| 7 | 🔜 Script Runner | Simple, good to have before UI |
-| 8 | 🔜 Isaac Core + UI | Built last when all modules are ready to connect |
+| 1 | 🔄 Email Fetcher (Gmail) | Foundation — covers all email via forwarding |
+| 2 | 🔜 Ollama Email Scorer | Builds directly on fetcher output |
+| 3 | 🔜 Morning Briefing | Core daily use case, needs scorer + calendar |
+| 4 | 🔜 Calendar Manager | Self-contained, needed for morning briefing |
+| 5 | 🔜 WhatsApp Sender | Most complex auth, saved for later |
+| 6 | 🔜 Script Runner | Simple, good to have before UI |
+| 7 | 🔜 Isaac Core + UI | Built last when all modules are ready to connect |
 
 ---
 

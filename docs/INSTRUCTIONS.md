@@ -5,6 +5,37 @@
 
 ---
 
+## 0. Documentation First
+
+- **Updating documentation is always the first priority** — before writing code, before fixing bugs, before anything else
+- If a decision is made, a direction changes, or a module is completed, update ROADMAP.md and INSTRUCTIONS.md before moving on
+- No module is considered done until its documentation reflects its actual current state
+- Code can be wrong and fixed. Undocumented decisions get forgotten and cost more time later
+- If you are unsure whether to document first or code first — document first
+
+---
+
+## 0.1 Changelog Format
+
+Every session entry in CHANGELOG.md must follow this exact format:
+
+```
+## YYYY-MM-DD
+
+**Worker:** (provided by user at update time)
+**Worktime:** (start time — end time, timezone, figured out from session context)
+
+### Entry Title
+- change details
+```
+
+- The worker email is always provided by the user when requesting a changelog update — never assume it
+- Worktime is inferred from the conversation timestamps
+- The Gmail account used for Isaac is not logged in the changelog header — it belongs in INSTRUCTIONS.md only
+- Dead ends and ruled-out approaches must be logged, not just successes
+
+---
+
 ## 1. Path Handling
 
 - **Never hardcode absolute paths** in bash scripts
@@ -13,8 +44,6 @@
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
   ```
-- AppleScript cannot detect its own path — it is the **only exception** where a path must be set manually
-- When AppleScript needs a path, it must receive it as an argument passed from the bash runner script, not hardcoded inside the `.applescript` file itself
 - The bash runner is always the source of truth for paths
 
 ---
@@ -28,12 +57,12 @@
 
 ---
 
-## 3. Script Stability
+## 3. No AppleScript
 
-- AppleScript is used for macOS app automation (e.g. Outlook) and is accepted as a pragmatic choice
-- AppleScript is acknowledged as app-dependent and may break on major Outlook or macOS updates
-- If a script breaks due to an update, rewrite only that module — other modules are unaffected
-- More stable alternatives (IMAP, official APIs) are noted but not required unless stability becomes an issue
+- AppleScript is **permanently removed** from this project
+- Microsoft Outlook 16.80+ (new Outlook for Mac) broke AppleScript inbox access — `messages of inbox` returns 0 regardless of inbox contents. Confirmed on version 16.107.3
+- Do not attempt to reintroduce AppleScript for any email-related task
+- All email access goes through the Gmail API via Python
 
 ---
 
@@ -75,7 +104,7 @@
 
 ## 8. Every Module Must Have
 
-- `scripts/fetch_*.applescript` or equivalent — the core logic
+- `scripts/fetch_emails.py` or equivalent — the core logic (Python, not AppleScript)
 - `scripts/run.sh` — runner with logging and error handling
 - `scripts/setup.sh` — one-time setup and cron installer
 - `output/` — where generated files go (gitignored)
@@ -83,7 +112,7 @@
 - `README.md` — intro and quick start
 - `docs/ROADMAP.md` — goals, plans, and blueprint
 - `docs/INSTRUCTIONS.md` — rules and conventions (this file)
-- `.gitignore` — always includes `output/` and `logs/`
+- `.gitignore` — always includes `output/`, `logs/`, `credentials.json`, `token.json`
 
 ---
 
@@ -99,16 +128,18 @@
 
 ## 10. Email Sources
 
-Isaac monitors two email accounts. Both are treated as first-class sources.
+Isaac reads from one Gmail account only. All email sources consolidate into it.
 
-| Account | Access Method |
+| Source | Method |
 |---|---|
-| UW Madison (@wisc.edu) | AppleScript → Outlook app (no API registration needed) |
-| Personal Gmail | Gmail API via Google OAuth |
+| UW Madison (@wisc.edu) | Auto-forwarded to Gmail via Outlook Web forwarding settings |
+| Personal email | Already in Gmail natively |
 
-- Both fetchers produce output in the same markdown format so the scorer handles them identically
-- Flagged emails are starred in their source app — Outlook emails starred in Outlook, Gmail emails starred + labeled "Isaac's Picks" in Gmail
-- Never route UW email through Gmail forwarding — keep accounts separate and access each directly
+- Gmail is accessed via the Gmail API using OAuth (Python)
+- `credentials.json` — downloaded from Google Cloud Console, never committed
+- `token.json` — auto-generated on first run after browser login, never committed
+- Both files must be in the root of the repo folder and listed in `.gitignore`
+- The one-time browser login only happens once — after that all runs are fully silent
 
 ---
 
