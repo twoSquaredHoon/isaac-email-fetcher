@@ -20,17 +20,18 @@
 Every session entry in CHANGELOG.md must follow this exact format:
 
 ```
-## YYYY-MM-DD
+## YYYY-MM-DD (Session N)
 
 **Worker:** (provided by user at update time)
-**Worktime:** (start time — end time, timezone, figured out from session context)
+**Worktime:** (start time — end time, timezone, inferred from conversation)
 
 ### Entry Title
 - change details
 ```
 
 - The worker email is always provided by the user when requesting a changelog update — never assume it
-- Worktime is inferred from the conversation timestamps
+- Worktime start is inferred from the first message timestamp of the session; end is provided by the user
+- If multiple sessions occur on the same date, label them Session 1, Session 2, etc.
 - The Gmail account used for Isaac is not logged in the changelog header — it belongs in INSTRUCTIONS.md only
 - Dead ends and ruled-out approaches must be logged, not just successes
 
@@ -54,6 +55,7 @@ Every session entry in CHANGELOG.md must follow this exact format:
 - Each module lives in its own folder and its own GitHub repository
 - Modules must not depend on each other to function — they work standalone
 - A module is only connected to Isaac's core when it is fully tested on its own
+- Exception: `isaac-email-scorer` shares OAuth credentials with `isaac-email-fetcher` and must live in the same parent directory
 
 ---
 
@@ -96,7 +98,7 @@ Every session entry in CHANGELOG.md must follow this exact format:
 ## 7. Naming Conventions
 
 - Repositories: `isaac-[module-name]` (e.g. `isaac-email-fetcher`, `isaac-calendar`)
-- Scripts: lowercase, hyphenated (e.g. `fetch_emails.applescript`, `run.sh`)
+- Scripts: lowercase, hyphenated (e.g. `fetch_emails.py`, `run.sh`)
 - Output files: include a datestamp (e.g. `emails_2026-04-06_08-00.md`)
 - Commit messages: use conventional commits format (`feat:`, `fix:`, `docs:`, `chore:`)
 
@@ -104,7 +106,7 @@ Every session entry in CHANGELOG.md must follow this exact format:
 
 ## 8. Every Module Must Have
 
-- `scripts/fetch_emails.py` or equivalent — the core logic (Python, not AppleScript)
+- A core logic script (e.g. `scripts/fetch_emails.py`) — Python, not AppleScript
 - `scripts/run.sh` — runner with logging and error handling
 - `scripts/setup.sh` — one-time setup and cron installer
 - `output/` — where generated files go (gitignored)
@@ -112,7 +114,7 @@ Every session entry in CHANGELOG.md must follow this exact format:
 - `README.md` — intro and quick start
 - `docs/ROADMAP.md` — goals, plans, and blueprint
 - `docs/INSTRUCTIONS.md` — rules and conventions (this file)
-- `.gitignore` — always includes `output/`, `logs/`, `credentials.json`, `token.json`
+- `.gitignore` — always use the canonical template (see rule 13)
 
 ---
 
@@ -140,6 +142,8 @@ Isaac reads from one Gmail account only. All email sources consolidate into it.
 - `token.json` — auto-generated on first run after browser login, never committed
 - Both files must be in the root of the repo folder and listed in `.gitignore`
 - The one-time browser login only happens once — after that all runs are fully silent
+- The scorer (`isaac-email-scorer`) shares the fetcher's token — no second login required
+- When the scorer is set up for the first time, a browser re-auth is triggered to upgrade the token scope from `gmail.readonly` to `gmail.modify`
 
 ---
 
@@ -161,3 +165,46 @@ Isaac reads from one Gmail account only. All email sources consolidate into it.
 - WhatsApp session data is stored locally and never committed to GitHub
 - Ollama runs locally — emails are never sent to an external AI API
 - Output files with email content stay on the local machine only (`output/` is always gitignored)
+
+---
+
+## 13. Canonical .gitignore Template
+
+Every Isaac module uses this exact `.gitignore`. Do not add duplicate entries or regenerate it:
+
+```gitignore
+output/
+logs/
+.venv/
+.DS_Store
+**/.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+__pycache__/
+*.pyc
+credentials.json
+token.json
+```
+
+---
+
+## 14. Python Environment
+
+- **Never use system-wide pip install** — macOS blocks this on Python 3.12+
+- Every module creates its own `.venv/` in the project root via `python3 -m venv .venv`
+- All pip installs go through `.venv/bin/pip`
+- All script execution goes through `.venv/bin/python`
+- `.venv/` is always gitignored
+
+---
+
+## 15. Google Cloud Console Notes
+
+- Isaac's Gmail project is named **Issac-email** (note the typo — this is the actual project name)
+- Project ID: `issac-492603`
+- Publishing status: Testing — only approved test users can authenticate
+- Test user: `twosquaredhoon@gmail.com` (added under Audience > Test users)
+- To add more test users: Google Cloud Console > Issac-email project > APIs & Services > OAuth consent screen > Audience > Test users
+- The "Ineligible accounts not added" warning after saving a test user can be ignored if the email appears in the test users list

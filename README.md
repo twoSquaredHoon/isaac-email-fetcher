@@ -1,132 +1,69 @@
-# 📬 Isaac — Email Fetcher
+# isaac-email-fetcher
 
-> Part of the Isaac AI Assistant project.
-> Fetches emails from Microsoft Outlook over the last 24 hours and saves them as a clean Markdown file for review.
+Fetches all emails from the last 24 hours via the Gmail API and saves them as a single clean markdown file in `output/`.
 
----
-
-## What it does
-
-- Connects to Microsoft Outlook on your Mac (no API keys needed)
-- Fetches all emails received in the last 24 hours
-- Saves them as a clean `.md` file in the `output/` folder
-- Runs automatically every day at a time you choose
-- Marks unread emails with 🔵 so you can spot them instantly
+Part of the [Isaac](https://github.com/yourusername/isaac-core) project.
 
 ---
 
-## Output example
+## Quick Start
 
-```markdown
-# 📬 Isaac Email Report
-**Generated:** Monday, April 6, 2026
-**Period:** Last 24 hours
-**Total emails found:** 4
+### Prerequisites
 
----
+- Python 3.9+
+- A Google Cloud project with Gmail API enabled
+- `credentials.json` downloaded from Google Cloud Console (OAuth 2.0 Desktop app)
 
-## 1. Assignment due Friday 🔵
-**From:** Professor Johnson <johnson@wisc.edu>
-**Received:** Monday, April 6, 2026 at 9:32 AM
+### Setup
 
-> Don't forget the report is due this Friday by midnight...
-
----
-
-## 2. Internship offer
-**From:** HR Team <hr@company.com>
-**Received:** Monday, April 6, 2026 at 2:15 PM
-
-> We are pleased to offer you the position...
-```
-
----
-
-## Requirements
-
-- Mac (macOS 12+)
-- Microsoft Outlook installed and signed in
-- Terminal access
-
----
-
-## Setup
-
-**1. Clone the repo**
 ```bash
-git clone https://github.com/yourusername/isaac-email-fetcher.git
+# Clone the repo
+git clone https://github.com/yourusername/isaac-email-fetcher
 cd isaac-email-fetcher
-```
 
-**2. Run setup**
-```bash
+# Place credentials.json in the repo root (never committed)
+cp /path/to/credentials.json .
+
+# Run setup (installs deps, triggers first OAuth login, installs cron)
 bash scripts/setup.sh
 ```
 
-The setup script will:
-- Make all scripts executable
-- Ask what time to run daily
-- Install the cron job automatically
-- Offer a test run
-
-**3. Allow permissions**
-
-On first run, Mac will ask if Terminal can control Outlook. Click **Allow**.
-
-If it doesn't prompt:
-1. System Settings → Privacy & Security → Automation
-2. Enable **Terminal → Microsoft Outlook**
-
----
-
-## Manual run
+### Manual run
 
 ```bash
 bash scripts/run.sh
 ```
 
+Output is saved to `output/emails_YYYY-MM-DD_HH-MM.md`.
+
 ---
 
-## Project structure
+## File Structure
 
 ```
 isaac-email-fetcher/
+├── docs/
+│   ├── ROADMAP.md
+│   └── INSTRUCTIONS.md
 ├── scripts/
-│   ├── fetch_emails.applescript   # Talks to Outlook, builds markdown
-│   ├── run.sh                     # Runner with logging and error handling
-│   └── setup.sh                   # One-time setup and cron installer
-├── output/                        # Generated .md files saved here
-├── logs/                          # Logs saved here
-└── README.md
+│   ├── fetch_emails.py     ← Gmail API fetcher (core logic)
+│   ├── run.sh              ← Runner with logging
+│   └── setup.sh            ← One-time setup + cron installer
+├── output/                 ← Generated markdown files (gitignored)
+├── logs/                   ← Run logs (gitignored)
+├── credentials.json        ← OAuth credentials (gitignored)
+├── token.json              ← Auto-generated on first run (gitignored)
+├── README.md
+└── .gitignore
 ```
 
 ---
 
-## Configuration
+## How It Works
 
-To change the hours lookback window, open `scripts/fetch_emails.applescript` and edit:
+1. `run.sh` is triggered by cron at the configured time
+2. `fetch_emails.py` authenticates silently via `token.json`
+3. Gmail API returns all messages from the last 24 hours
+4. Emails are saved as `output/emails_YYYY-MM-DD_HH-MM.md`
 
-```applescript
-set hoursBack to 24
-```
-
----
-
-## What's next
-
-This is the foundation for Isaac's email workflow. Next steps:
-- Pipe the `.md` output into **Ollama** to score and flag important emails
-- Add Gmail support alongside Outlook
-- Build a simple web UI to review flagged emails
-
----
-
-## Part of the Isaac project
-
-| Module | Status |
-|---|---|
-| 📬 Email Fetcher (Outlook) | ✅ This repo |
-| 📅 Calendar Manager | 🔜 Coming soon |
-| 💬 WhatsApp Sender | 🔜 Coming soon |
-| 🤖 Ollama Email Scorer | 🔜 Coming soon |
-| 🖥️ Isaac UI | 🔜 Coming soon |
+The first run opens a browser for Google OAuth login. Every run after that is fully silent.

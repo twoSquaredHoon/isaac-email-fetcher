@@ -80,10 +80,6 @@ MacBook (anywhere)
   - Latency depends on network between devices
 ```
 
-> Note: Running Isaac at work means low latency when accessed on campus. Accessing
-> from home or elsewhere adds round-trip internet latency, but since Isaac handles
-> short predefined tasks the delay is minimal.
-
 ### Future Setup (Home Server)
 
 ```
@@ -95,9 +91,6 @@ Home Server (Isaac Server)
 Tailscale (secure tunnel)
         ↓
 Any device, anywhere
-  - MacBook at work or school
-  - Phone
-  - Any browser
 ```
 
 ---
@@ -111,89 +104,88 @@ Isaac monitors one Gmail inbox that consolidates all email sources.
 | UW Madison (@wisc.edu) | Auto-forwarded to Gmail via UW Outlook forwarding settings |
 | Personal email | Already in Gmail natively |
 
-Isaac reads Gmail only via the Gmail API (Python). No Outlook involvement at all.
+Isaac fetches from all inbox categories (Primary, Promotions, Social, Updates). Gmail's auto-categorization is not used to pre-filter — the Ollama scorer handles relevance decisions based on Isaac's actual criteria.
 
-**Why not Outlook/AppleScript:** Microsoft Outlook 16.80+ (new Outlook for Mac) broke AppleScript inbox access. `messages of inbox` returns 0 regardless of inbox contents. Confirmed broken on version 16.107.3. AppleScript is removed from this project permanently.
+**Why not Outlook/AppleScript:** Microsoft Outlook 16.80+ broke AppleScript inbox access. Permanently removed.
 
-**Why not Microsoft Graph API:** UW Madison disables app passwords and restricts third-party OAuth for student accounts. Forwarding to Gmail bypasses this entirely with a one-time settings change.
+**Why not Microsoft Graph API:** UW Madison restricts third-party OAuth for student accounts. Forwarding to Gmail bypasses this entirely.
 
-**Why not n8n:** Custom scripts were chosen over n8n for simplicity — no extra service to run, easier to debug, everything lives in plain version-controlled files.
+**Why not n8n:** Custom scripts chosen for simplicity, easier debugging, and cleaner version control.
 
 ---
 
 ## Modules
 
-### 🔄 Module 1 — Email Fetcher (Gmail)
+### ✅ Module 1 — Email Fetcher (Gmail)
 **Repo:** `isaac-email-fetcher`
-**Status:** In Progress
+**Status:** Complete
 
-Fetches all emails from Gmail over the last 24 hours using the Gmail API and saves them as a clean markdown file. Covers all email sources — UW Madison emails auto-forward to Gmail, so one script handles everything.
+Fetches all emails from Gmail over the last 24 hours and saves them as a clean markdown file in `output/`. Covers all email sources — UW Madison emails auto-forward to Gmail.
 
-**Access method:** Gmail API via OAuth (Python). One-time browser login generates `token.json` which is reused silently on all future runs.
+**Modes:**
+- Default: fetches last 24 hours (used by cron)
+- `--recent N`: fetches N most recent inbox emails (used for testing)
 
-**Dependencies:** `google-auth-oauthlib`, `google-auth-httplib2`, `google-api-python-client`
-
-**Credentials:** `credentials.json` (downloaded from Google Cloud Console, never committed to GitHub)
+**Cron:** daily at 07:00 CT
 
 **Files:**
 ```
 isaac-email-fetcher/
 ├── docs/
-│   ├── ROADMAP.md
-│   └── INSTRUCTIONS.md
 ├── scripts/
-│   ├── fetch_emails.py        ← Gmail API fetcher
+│   ├── fetch_emails.py
 │   ├── run.sh
 │   └── setup.sh
 ├── output/                    ← gitignored
 ├── logs/                      ← gitignored
+├── .venv/                     ← gitignored
 ├── credentials.json           ← gitignored
-├── token.json                 ← gitignored, auto-generated on first run
+├── token.json                 ← gitignored
 ├── README.md
 └── .gitignore
 ```
 
-**Flow:**
-```
-cron triggers run.sh
-        ↓
-fetch_emails.py authenticates via token.json
-        ↓
-Gmail API returns last 24hrs of messages
-        ↓
-Saved as emails_YYYY-MM-DD_HH-MM.md in output/
-```
-
 ---
 
-### 🔜 Module 2 — Ollama Email Scorer
+### 🔄 Module 2 — Ollama Email Scorer
 **Repo:** `isaac-email-scorer`
-**Status:** Planned
+**Status:** Built, not yet tested (Ollama not installed on Isaac machine)
 
-Takes the markdown output from the email fetcher and runs it through a local Ollama model. Scores each email by importance based on predefined criteria. Flags important emails by starring them in Gmail.
-
-**Model:** `qwen2.5:3b` — chosen for speed, small size, and strong instruction-following. No reasoning needed since criteria are fully predefined.
+Takes the latest markdown output from the email fetcher and scores each email using `qwen2.5:3b` via Ollama. Important emails are starred and labeled "Isaac's Picks" in Gmail.
 
 **Scoring criteria:**
-- Emails from professors or academic staff
-- Emails with deadlines or action items
+- Emails from professors, academic staff, TAs, or university administration
+- Emails with deadlines, due dates, or action items
 - Emails from real people (not newsletters or automated messages)
 - Emails related to internships or jobs
 
-**Flagging behavior:**
-- Important emails → starred + added to "Isaac's Picks" label in Gmail
-- All flagged emails → surfaced in Isaac UI review panel
+**Key design decisions:**
+- Auto-detects latest file in `isaac-email-fetcher/output/` — no path argument needed
+- Shares OAuth credentials and token with `isaac-email-fetcher`
+- Prompts model for strict JSON output for reliable parsing
+- "Isaac's Picks" Gmail label is auto-created on first run if it doesn't exist
+- Requires `gmail.modify` scope — triggers one-time browser re-auth on first scorer setup
 
-**Flow:**
+**Both repos must be in the same parent directory.**
+
+**Cron:** daily at 07:05 CT (5 minutes after fetcher)
+
+**Files:**
 ```
-emails_YYYY-MM-DD.md
-        ↓
-Ollama (qwen2.5:3b)
-"Does this email matter based on [criteria]?"
-        ↓
-├── Yes → Star in Gmail + add to flagged list
-└── No  → Skip
+isaac-email-scorer/
+├── docs/
+├── scripts/
+│   ├── score_emails.py
+│   ├── run.sh
+│   └── setup.sh
+├── output/                    ← gitignored
+├── logs/                      ← gitignored
+├── .venv/                     ← gitignored
+├── README.md
+└── .gitignore
 ```
+
+**Next step:** Install Ollama on Isaac machine, run `setup.sh`, test.
 
 ---
 
@@ -201,14 +193,7 @@ Ollama (qwen2.5:3b)
 **Repo:** `isaac-morning-briefing`
 **Status:** Planned
 
-Runs every morning at a set time. Combines flagged emails from both accounts with today's Google Calendar events and delivers a single consolidated summary to the Isaac UI (and optionally via WhatsApp message to self).
-
-**Output includes:**
-- Flagged emails from the last 24 hours
-- Today's calendar events with times
-- Any deadlines detected in emails
-
-**Why this is in the build plan and not future ideas:** This is the primary daily use case for Isaac — one morning check instead of opening multiple apps.
+Runs every morning. Combines flagged emails from Isaac's Picks with today's Google Calendar events into a single consolidated summary delivered to the Isaac UI (and optionally via WhatsApp).
 
 ---
 
@@ -216,15 +201,7 @@ Runs every morning at a set time. Combines flagged emails from both accounts wit
 **Repo:** `isaac-calendar`
 **Status:** Planned
 
-Connects to Google Calendar via the Google Calendar API. Allows Isaac to view upcoming events, create new events, and delete or reschedule events on command.
-
-**Capabilities:**
-- View events for today / this week
-- Create a new event with title, time, location
-- Delete an event by name or time
-- List events in a given date range
-
-**Auth:** Google OAuth (one-time setup, free)
+Connects to Google Calendar via the Google Calendar API. View, create, delete, and reschedule events on command.
 
 ---
 
@@ -232,14 +209,7 @@ Connects to Google Calendar via the Google Calendar API. Allows Isaac to view up
 **Repo:** `isaac-whatsapp`
 **Status:** Planned
 
-Sends WhatsApp messages to contacts or groups via whatsapp-web.js. Uses a QR code scan on first setup, then runs silently in the background.
-
-**Capabilities:**
-- Send a message to a contact by name
-- Send a message to a group by name
-- Confirm delivery back to Isaac UI
-
-**Note:** Uses unofficial WhatsApp Web automation. Works reliably for personal use. WhatsApp could theoretically block it but this is rare for personal accounts.
+Sends WhatsApp messages to contacts or groups via whatsapp-web.js. QR code scan on first setup, silent afterward.
 
 ---
 
@@ -247,12 +217,7 @@ Sends WhatsApp messages to contacts or groups via whatsapp-web.js. Uses a QR cod
 **Repo:** `isaac-script-runner`
 **Status:** Planned
 
-Runs predefined scripts on the Mac on command. Scripts are pre-approved and stored locally. Isaac cannot run arbitrary code — only scripts that exist in the approved scripts folder.
-
-**Capabilities:**
-- List available scripts
-- Run a script by name
-- Return output to Isaac UI
+Runs pre-approved scripts on the Mac on command. Isaac cannot run arbitrary code — only scripts in the approved scripts folder.
 
 ---
 
@@ -260,28 +225,21 @@ Runs predefined scripts on the Mac on command. Scripts are pre-approved and stor
 **Repo:** `isaac-core`
 **Status:** Planned — built last, after all modules are stable
 
-The brain that connects everything. A simple Flask web server that hosts the UI and routes commands to the right module. Accessible from any browser on the network or via Tailscale.
-
-**UI features:**
-- Text command input
-- Output display
-- Module status indicators
-- Morning briefing view
-- Flagged emails review panel (Gmail, Isaac's Picks label)
+Flask web server hosting the UI and routing commands to modules. Accessible from any browser via Tailscale.
 
 ---
 
 ## Build Order
 
-| Phase | Module | Why |
+| Phase | Module | Status |
 |---|---|---|
-| 1 | 🔄 Email Fetcher (Gmail) | Foundation — covers all email via forwarding |
-| 2 | 🔜 Ollama Email Scorer | Builds directly on fetcher output |
-| 3 | 🔜 Morning Briefing | Core daily use case, needs scorer + calendar |
-| 4 | 🔜 Calendar Manager | Self-contained, needed for morning briefing |
-| 5 | 🔜 WhatsApp Sender | Most complex auth, saved for later |
-| 6 | 🔜 Script Runner | Simple, good to have before UI |
-| 7 | 🔜 Isaac Core + UI | Built last when all modules are ready to connect |
+| 1 | ✅ Email Fetcher (Gmail) | Complete |
+| 2 | 🔄 Ollama Email Scorer | Built, pending Ollama install + test |
+| 3 | 🔜 Morning Briefing | Planned |
+| 4 | 🔜 Calendar Manager | Planned |
+| 5 | 🔜 WhatsApp Sender | Planned |
+| 6 | 🔜 Script Runner | Planned |
+| 7 | 🔜 Isaac Core + UI | Planned |
 
 ---
 
@@ -289,4 +247,4 @@ The brain that connects everything. A simple Flask web server that hosts the UI 
 
 - **Wendy integration** — Isaac and Wendy share a Tailscale network, can trigger each other's tasks
 - **Voice input** — add Whisper (local speech-to-text) to the UI for voice commands
-- **Home server migration** — move Isaac to a dedicated home server when hardware is available; Isaac and Wendy run on the same machine
+- **Home server migration** — move Isaac to a dedicated home server when hardware is available
