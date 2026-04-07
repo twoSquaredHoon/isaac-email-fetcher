@@ -1,0 +1,17 @@
+# Isaac Email Fetcher - .gitignore
+
+# Output files (contain your personal emails, never commit these)
+output/
+
+# Logs
+logs/
+
+# Mac system files
+.DS_Store
+**/.DS_Store
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
